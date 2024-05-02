@@ -9,7 +9,7 @@ from bot import Bot
 
 
 class Server:
-    def __init__(self, client: discord.Client, *argv):
+    def __init__(self, client: discord.Client, guild: discord.Guild, *argv):
         self.__args = [x for x in argv]
 
         if not any([isinstance(x, str) for x in self.__args]):
@@ -22,19 +22,20 @@ class Server:
         temp_array = self.__args_values
 
         for index, arg in enumerate(self.__args):
-            gen_function_code_getter = f'''def get{arg.capitalize()}():
+
+            gen_function_code_getter = f'''def async get{arg.capitalize()}():
             return self._Server__args_values[{index}]'''
 
-            gen_function_code_setter = f'''def set{arg.capitalize()}(value):
+            gen_function_code_setter = f'''async def set{arg.capitalize()}(value):
             if not isinstance(value, list):
                 raise TypeError
             self._Server__args_values[{index}] = value 
             '''
 
-            gen_function_code_add = f'''def add{arg.capitalize()}(value):
+            gen_function_code_add = f'''async def add{arg.capitalize()}(value):
             self._Server__args_values[{index}].append(value)'''
 
-            gen_function_code_remove = f'''def remove{arg.capitalize()}(*args):
+            gen_function_code_remove = f'''async def remove{arg.capitalize()}(*args):
             if len(args) > 1:
                 raise TypeError("remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
             if args:
@@ -42,8 +43,6 @@ class Server:
             else:
                 del self._Server__args_values[{index}][-1]'''
 
-            gen_function_code_remove_index = f'''def removeIndex{arg.capitalize()}(index):
-            del self._Server__args_values[{index}][index]'''
             
             exec(gen_function_code_getter, {'self':self}, globals())
             exec(gen_function_code_setter, {'self':self}, globals())
@@ -55,12 +54,21 @@ class Server:
         pass
 
 
-b = Bot(command_prefix='/', intents=discord.Intents.all())
-server = Server(b, "data")
-#b.run()
-setData(["dataset"]) 
-addData('added')
-print(getData())
-removeData(1) 
-print(getData())
+bot = Bot(command_prefix='/', intents=discord.Intents.all())
+server = Server(bot, "members")
+addMessage("sent1")
+
+@bot.event
+async def on_ready(self):
+    print('Logged in as')
+    print(self.user.name)
+    print(self.user.id)
+
+
+@bot.command()
+async def answer(ctx):
+    await ctx.send("hello")
+
+bot.run()
+
 
