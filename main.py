@@ -29,12 +29,26 @@ class Server:
             if not isinstance(value, list):
                 raise TypeError
             self._Server__args_values[{index}] = value 
-            print(self._Server__args_values)'''
+            '''
 
-            gen_function_code_add = f'''def add'''
+            gen_function_code_add = f'''def add{arg.capitalize()}(value):
+            self._Server__args_values[{index}].append(value)'''
+
+            gen_function_code_remove = f'''def remove{arg.capitalize()}(*args):
+            if len(args) > 1:
+                raise TypeError("remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
+            if args:
+                del self._Server__args_values[{index}][args[0]]
+            else:
+                del self._Server__args_values[{index}][-1]'''
+
+            gen_function_code_remove_index = f'''def removeIndex{arg.capitalize()}(index):
+            del self._Server__args_values[{index}][index]'''
             
             exec(gen_function_code_getter, {'self':self}, globals())
             exec(gen_function_code_setter, {'self':self}, globals())
+            exec(gen_function_code_add, {'self':self}, globals())
+            exec(gen_function_code_remove, {'self':self}, globals())
         
 
     def take_snapshot(self):
@@ -45,7 +59,8 @@ b = Bot(command_prefix='/', intents=discord.Intents.all())
 server = Server(b, "data")
 #b.run()
 setData(["dataset"]) 
+addData('added')
 print(getData())
-print(server._Server__args_values)
-
+removeData(1) 
+print(getData())
 
