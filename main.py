@@ -3,10 +3,10 @@ from discord.ext import commands
 import dotenv
 import nest_asyncio
 import os
+import asyncio
 nest_asyncio.apply()
 dotenv.load_dotenv()
 from bot import Bot
-
 
 class Server:
     def __init__(self, client: discord.Client, guild: discord.Guild, *argv):
@@ -17,18 +17,23 @@ class Server:
 
         self.__args_values = [[] for x in self.__args] 
         self.__client = client 
+        self.guild = guild
 
-        global temp_array 
-        temp_array = self.__args_values
+        self.options = {'members': False, 'messages': False}
+
+        if 'members' in self.__args:
+            self.options['members'] = True
+        if 'messages' in self.__args:
+            self.options['messages'] = True
 
         for index, arg in enumerate(self.__args):
 
-            gen_function_code_getter = f'''def async get{arg.capitalize()}():
+            gen_function_code_getter = f'''async def get{arg.capitalize()}():
             return self._Server__args_values[{index}]'''
 
             gen_function_code_setter = f'''async def set{arg.capitalize()}(value):
             if not isinstance(value, list):
-                raise TypeError
+                raise TypeError("value is supposed to be type list not " + str(type(value)))
             self._Server__args_values[{index}] = value 
             '''
 
@@ -48,21 +53,43 @@ class Server:
             exec(gen_function_code_setter, {'self':self}, globals())
             exec(gen_function_code_add, {'self':self}, globals())
             exec(gen_function_code_remove, {'self':self}, globals())
+
+ 
+        return wrapper
+    def take_snapshot(self, func):
+        async def take_snapshot_wrapper(*args, **kwargs):
+
+            self.guild_names = [x.name for x in self.__client.guilds]
+
+            self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)]
         
+            if self.options['members']:
+                for member in self.guild_obj.members:
+                    await addMembers(member)
 
-    def take_snapshot(self):
-        pass
+            result = await func(*args, **kwargs)
+            return re
 
+        return take_snapshot_wrapper
+
+                
 
 bot = Bot(command_prefix='/', intents=discord.Intents.all())
-server = Server(bot, "members")
-addMessage("sent1")
+server = Server(bot, "monolith", "members")
 
 @bot.event
-async def on_ready(self):
+async def on_ready():
     print('Logged in as')
-    print(self.user.name)
-    print(self.user.id)
+    print(bot.user.name)
+    print(bot.user.id)
+    #await server.add('hel')
+    @server.take_snapshot
+    async def w():
+        print("wokrs")
+    await w()
+
+    members = await getMembers() 
+    print(members)
 
 
 @bot.command()
