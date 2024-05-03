@@ -54,10 +54,11 @@ class Server:
             exec(gen_function_code_add, {'self':self}, globals())
             exec(gen_function_code_remove, {'self':self}, globals())
 
- 
-        return wrapper
-    def take_snapshot(self, func):
-        async def take_snapshot_wrapper(*args, **kwargs):
+    async def __generic_function(self):
+        print("Taking Snapshot of Server . . .")
+    
+    def take_snapshot(self, func=None):
+        async def take_snapshot_wrapper():
 
             self.guild_names = [x.name for x in self.__client.guilds]
 
@@ -67,15 +68,28 @@ class Server:
                 for member in self.guild_obj.members:
                     await addMembers(member)
 
-            result = await func(*args, **kwargs)
-            return re
+            if self.options['messages']:
+                for channel in self.guild_obj.channels:
+                    try:
+                        async for message in channel.history(limit=None):
+                            print(message.content)
+                            await addMessages(message.content)
+                    except:
+                        pass
 
+            if func is None:
+                await self.__generic_function() 
+            else:    
+                await func()
+
+        if func is None:
+            return take_snapshot_wrapper()
         return take_snapshot_wrapper
 
                 
 
 bot = Bot(command_prefix='/', intents=discord.Intents.all())
-server = Server(bot, "monolith", "members")
+server = Server(bot, "monolith", "messages")
 
 @bot.event
 async def on_ready():
@@ -83,14 +97,20 @@ async def on_ready():
     print(bot.user.name)
     print(bot.user.id)
     #await server.add('hel')
+    await server.take_snapshot()
+
+    messages = await getMessages()
+    print(messages)
+    
+    '''
     @server.take_snapshot
     async def w():
-        print("wokrs")
+        pass
     await w()
-
+    
     members = await getMembers() 
     print(members)
-
+    '''
 
 @bot.command()
 async def answer(ctx):
