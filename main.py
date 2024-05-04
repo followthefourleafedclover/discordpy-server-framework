@@ -12,8 +12,8 @@ dotenv.load_dotenv()
 
 
 class Server:
-    def __init__(self, client: discord.Client, guild: discord.Guild, *argv):
-        self.__args = [x for x in argv]
+    def __init__(self, client: discord.Client, guild: discord.Guild, *args):
+        self.__args = [x for x in args]
 
         if not any([isinstance(x, str) for x in self.__args]):
             raise TypeError
@@ -112,6 +112,7 @@ class Server:
 
         def merge():
             lengths = [len(x) for x in self.__args_zipped.values()] 
+            print(lengths)
             lengths_zipped = list(zip(self.__args, lengths))
             sorted(lengths_zipped, key=lambda x: x[1])
             to_merge = [] 
@@ -131,7 +132,8 @@ class Server:
             return to_merge
 
         to_merge = merge() 
-        merged = ['&'.join(x) for x in to_merge]
+        print(to_merge)
+    
 
         if to_merge:
             df_dict = {} 
@@ -139,8 +141,16 @@ class Server:
                 for item in group: 
                     df_dict.update({item: self.__args_zipped[item]})
 
+                print(df_dict)
                 df = pd.DataFrame(df_dict)
-                df.to_csv(f"{merged[index]}.csv")
+                df.to_csv(f"{'&'.join(group)}.csv")
+
+            flatten = [y for y in [x for x in to_merge]][0]
+            rest = [x for x in self.__args if not x in flatten]
+            
+            for item in rest:
+                df = pd.DataFrame({item: self.__args_zipped[item]})
+                df.to_csv(f"{item}.csv")
 
         else:
             for zipped in self.__args_zipped:
@@ -148,7 +158,7 @@ class Server:
                 df.to_csv(f"{zipped}.csv")
 
 bot = Bot(command_prefix='/', intents=discord.Intents.all())
-server = Server(bot, "monolith", "messages", "members")
+server = Server(bot, "monolith", "messages", "members", "test")
 
 
 @bot.event
@@ -157,7 +167,12 @@ async def on_ready():
     print(bot.user.name)
     print(bot.user.id)
     #await server.add('hel')
-    await server.take_snapshot()
+    #await server.take_snapshot()
+    @server.take_snapshot
+    async def w():
+        await setTest([1, 2])
+        
+    await w()
     print(id)
     print(Guild)
 
@@ -167,16 +182,12 @@ async def on_ready():
     messages = await getMessages()
     print(messages)z
     '''
+
     
-    '''
-    @server.take_snapshot
-    async def w():
-        pass
-    await w()
+    
     
     members = await getMembers() 
     print(members)
-    '''
 
 @bot.command()
 async def answer(ctx):
