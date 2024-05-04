@@ -106,7 +106,8 @@ class Server:
             return take_snapshot_wrapper()
         return take_snapshot_wrapper
 
-    def export(self, file_type='csv'):
+
+    async def export(self, file_type='csv'):
         self.__args_zipped = dict(zip(self.__args, self.__args_values))
 
         def merge():
@@ -130,19 +131,21 @@ class Server:
             return to_merge
 
         to_merge = merge() 
-        print(to_merge)
+        merged = ['&'.join(x) for x in to_merge]
 
-        for zipped in self.__args_zipped:
-            if to_merge:
-                merged = []
-                merged.append('-'.join(to_merge))
-                for index, item in enumerate(merged):
-                    df = pd.DataFrame([],columns=to_merge[index])
-                    df.to_csv(f'{item}.csv')
-            else:
+        if to_merge:
+            df_dict = {} 
+            for index, group in enumerate(to_merge): 
+                for item in group: 
+                    df_dict.update({item: self.__args_zipped[item]})
+
+                df = pd.DataFrame(df_dict)
+                df.to_csv(f"{merged[index]}.csv")
+
+        else:
+            for zipped in self.__args_zipped:
                 df = pd.DataFrame({zipped: self.__args_zipped[zipped]})
                 df.to_csv(f"{zipped}.csv")
-                
 
 bot = Bot(command_prefix='/', intents=discord.Intents.all())
 server = Server(bot, "monolith", "messages", "members")
@@ -158,7 +161,7 @@ async def on_ready():
     print(id)
     print(Guild)
 
-    server.export()
+    await server.export()
 
     '''
     messages = await getMessages()
