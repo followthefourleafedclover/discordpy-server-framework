@@ -3,10 +3,13 @@ from discord.ext import commands
 import dotenv
 import nest_asyncio
 import os
-import asyncio
+import pandas as pd
+import warnings
+from bot import Bot
+
 nest_asyncio.apply()
 dotenv.load_dotenv()
-from bot import Bot
+
 
 class Server:
     def __init__(self, client: discord.Client, guild: discord.Guild, *argv):
@@ -56,6 +59,15 @@ class Server:
 
     async def __generic_function(self):
         print("Taking Snapshot of Server . . .")
+
+    def __get_guild_attrs(self):
+        guild_attrs = dir(discord.Guild)
+        start_index = 0
+        for index, attrs in enumerate(guild_attrs):
+            if not '_' in attrs:
+                start_index = index 
+                break 
+        return guild_attrs[start_index:]
     
     def take_snapshot(self, func=None):
         async def take_snapshot_wrapper():
@@ -63,6 +75,15 @@ class Server:
             self.guild_names = [x.name for x in self.__client.guilds]
 
             self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)]
+
+            global Guild 
+            Guild  = self.guild_obj  
+
+            self.guild_attrs = self.__get_guild_attrs()
+
+            for attr in self.guild_attrs:
+                code = f'{attr} = self.guild_obj.{attr}'
+                exec(code, {'self':self}, globals())
         
             if self.options['members']:
                 for member in self.guild_obj.members:
@@ -72,7 +93,6 @@ class Server:
                 for channel in self.guild_obj.channels:
                     try:
                         async for message in channel.history(limit=None):
-                            print(message.content)
                             await addMessages(message.content)
                     except:
                         pass
@@ -86,10 +106,47 @@ class Server:
             return take_snapshot_wrapper()
         return take_snapshot_wrapper
 
+    def export(self, file_type='csv'):
+        self.__args_zipped = dict(zip(self.__args, self.__args_values))
+
+        def merge():
+            lengths = [len(x) for x in self.__args_zipped.values()] 
+            lengths_zipped = list(zip(self.__args, lengths))
+            sorted(lengths_zipped, key=lambda x: x[1])
+            to_merge = [] 
+            temp = []
+            for i in range(len(lengths_zipped) - 1):
+                if lengths_zipped[i][1] == lengths_zipped[i+1][1]:
+                    if not lengths_zipped[i][0] in temp:
+                        temp.append(lengths_zipped[i][0])
+                    if not lengths_zipped[i+1][0] in temp:
+                        temp.append(lengths_zipped[i+1][0])         
+                else:
+                    if temp:
+                        to_merge.append(temp) 
+                        temp = [] 
+            if temp:
+                to_merge.append(temp)    
+            return to_merge
+
+        to_merge = merge() 
+        print(to_merge)
+
+        for zipped in self.__args_zipped:
+            if to_merge:
+                merged = []
+                merged.append('-'.join(to_merge))
+                for index, item in enumerate(merged):
+                    df = pd.DataFrame([],columns=to_merge[index])
+                    df.to_csv(f'{item}.csv')
+            else:
+                df = pd.DataFrame({zipped: self.__args_zipped[zipped]})
+                df.to_csv(f"{zipped}.csv")
                 
 
 bot = Bot(command_prefix='/', intents=discord.Intents.all())
-server = Server(bot, "monolith", "messages")
+server = Server(bot, "monolith", "messages", "members")
+
 
 @bot.event
 async def on_ready():
@@ -98,9 +155,15 @@ async def on_ready():
     print(bot.user.id)
     #await server.add('hel')
     await server.take_snapshot()
+    print(id)
+    print(Guild)
 
+    server.export()
+
+    '''
     messages = await getMessages()
-    print(messages)
+    print(messages)z
+    '''
     
     '''
     @server.take_snapshot
