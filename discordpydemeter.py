@@ -2,7 +2,32 @@ import discord
 import pandas as pd 
 import os 
 
-class Server:
+class Hub():
+    def __init__(self, client: discord.Client, *args):
+        self.args = [x for x in args]
+        self.client = client
+        self.servers = [] 
+
+    async def default_initialize(self):
+        for server in self.servers:
+            await server.take_snapshot()
+
+
+    def intialize(self, func=None):
+        async def take_snapshot_wrappper():
+            for guild in self.client.guilds:
+                server = _Server(self.client, str(guild), *self.args)
+                self.servers.append(server)
+            
+            if func is None:
+                return await self.default_initialize()
+            else:
+                await func()
+        if func is None:
+            return take_snapshot_wrappper()
+        return take_snapshot_wrappper
+
+class _Server:
     def __init__(self, client: discord.Client, guild: discord.Guild, *args):
         self.__args = [x for x in args]
 
@@ -36,7 +61,7 @@ class Server:
 
             gen_function_code_remove = f'''async def {self.guild.capitalize()}Remove{arg.capitalize()}(*args):
             if len(args) > 1:
-                raise TypeError("remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
+                raise TypeError("{self.guild.capitalize()}Remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
             if args:
                 del self._Server__args_values[{index}][args[0]]
             else:
@@ -44,9 +69,13 @@ class Server:
 
             
             exec(gen_function_code_getter, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()}Get{arg.capitalize()} = {self.guild.capitalize()}Get{arg.capitalize()}")
             exec(gen_function_code_setter, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()}Set{arg.capitalize()} = {self.guild.capitalize()}Set{arg.capitalize()}")
             exec(gen_function_code_add, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()}Add{arg.capitalize()} = {self.guild.capitalize()}Add{arg.capitalize()}")
             exec(gen_function_code_remove, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()}Remove{arg.capitalize()} = {self.guild.capitalize()}Remove{arg.capitalize()}")
 
         self.server_dir = f"{os.getcwd()}/{self.guild.capitalize()}"
 
@@ -75,12 +104,14 @@ class Server:
             
             exec(global_guild_exec_code1, {'self':self}, globals())
             exec(global_guild_exec_code2, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()} = {self.guild.capitalize()}")
 
             self.guild_attrs = self.__get_guild_attrs()
 
             for attr in self.guild_attrs:
                 code = f'{self.guild.capitalize()}{attr.capitalize()} = self.guild_obj.{attr}'
                 exec(code, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}{attr.capitalize()} = {self.guild.capitalize()}{attr.capitalize()}")
         
             if self.options['members']:
                 for member in self.guild_obj.members:

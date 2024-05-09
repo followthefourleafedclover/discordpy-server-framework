@@ -6,23 +6,20 @@ import os
 import pandas as pd
 from bot import Bot
 import sys
-from Hub import Hub
+from discordpydemeter import *
+
 
 nest_asyncio.apply()
 dotenv.load_dotenv()
-
+s = "snake_case"
+print(s.casefold())
 
 intents=discord.Intents.all()
-intents.typing = True
-intents.messages = True
-intents.message_content = True
 bot = Bot(command_prefix='/', intents=intents)
-base = Hub(bot, "messages", 'members')
+hub = Hub(bot, "messages", 'members', 'test')
 
-'''
-server = Server(bot, "monolith", "messages", "members", "test")
-server2 = Server(bot, "monolith2", "messages", "members", "test")
-'''
+#server = Server(bot, "monolith", 'messages', 'members')
+
 
 @bot.event
 async def on_ready():
@@ -31,12 +28,8 @@ async def on_ready():
     print(bot.user.id)
     #await server.add('hel')
     #await server.take_snapshot()
-    @base.intialize
-    async def new():
-        print("no snaps")
-    
-    await new()
-    #await base.intialize()
+    await hub.intialize()
+    print(globals())
 
     #print(globals())
     '''
@@ -47,12 +40,13 @@ async def on_ready():
     await w()
     '''
     #await server2.take_snapshot()
-    '''
-    print(id)
+    
+    print(MonolithId)
     print(Monolith)
 
     #await server.export()
-           
+    await MonolithSetTest([1, 2])
+    #await hub.servers[0].export()
 
     messages = await MonolithGetMessages()
     print(messages)    
@@ -63,7 +57,7 @@ async def on_ready():
     
     members = await MonolithGetMembers() 
     print(members)
-    '''
+    
 @bot.command()
 async def answer(ctx):
     await ctx.send("hello")
