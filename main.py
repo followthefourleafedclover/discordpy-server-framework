@@ -26,10 +26,16 @@ async def on_ready():
     print('Logged in as')
     print(bot.user.name)
     print(bot.user.id)
-    #await server.add('hel')
+    #await server.add('hel')s
     #await server.take_snapshot()
     await hub.intialize()
-    print(globals())
+    #print(globals())
+    '''
+    @hub.intialize
+    async def w():
+        print("initilatize?")
+    '''
+    #await w()
 
     #print(globals())
     '''
@@ -57,6 +63,10 @@ async def on_ready():
     
     members = await MonolithGetMembers() 
     print(members)
+
+    l = ServerStatistics(hub.servers[0])
+
+    await hub.export()
     
 @bot.command()
 async def answer(ctx):
