@@ -28,7 +28,7 @@ async def on_ready():
     print(bot.user.id)
     #await server.add('hel')s
     #await server.take_snapshot()
-    await hub.intialize()
+    await hub.intialize(database_config={'host': 'localhost', 'dbname': 'postgres', 'user' :'postgres', 'password': 'sreevar', 'port': 5432})
     #print(globals())
     '''
     @hub.intialize
@@ -36,6 +36,19 @@ async def on_ready():
         print("initilatize?")
     '''
     #await w()
+
+    #await MonolithAddMessages("works")
+    await MonolithSetMessages(["lets", 'make', 'art'])
+    
+    messages = await MonolithGetMessages() 
+    print(messages)
+    
+    await MonolithRemoveMessages()
+
+    messages = await MonolithGetMessages() 
+    print(messages)
+
+    print(hub.servers[0].database_to_pd_dataframe(table='monolith_messages'))
 
     #print(globals())
     '''
@@ -46,7 +59,7 @@ async def on_ready():
     await w()
     '''
     #await server2.take_snapshot()
-    
+    '''
     print(MonolithId)
     print(Monolith)
 
@@ -66,8 +79,8 @@ async def on_ready():
 
     l = ServerStatistics(hub.servers[0])
 
-    await hub.export()
-    
+    #await hub.export()
+    '''
 @bot.command()
 async def answer(ctx):
     await ctx.send("hello")

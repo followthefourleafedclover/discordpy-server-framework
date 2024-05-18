@@ -1,6 +1,7 @@
 import discord 
 import pandas as pd 
 import os 
+import psycopg2
 
 class Hub():
     def __init__(self, client: discord.Client, *args):
@@ -27,10 +28,10 @@ class Hub():
             return export_wrapper()
         return export_wrapper
 
-    def intialize(self, func=None):
+    def intialize(self, func=None, database_config={}):
         async def take_snapshot_wrappper():
             for guild in self.client.guilds:
-                server = _Server(self.client, str(guild), *self.args)
+                server = _Server(self.client, str(guild), *self.args, database_config=database_config)
                 self.servers.append(server)
             
             if func is None:
@@ -42,56 +43,108 @@ class Hub():
         return take_snapshot_wrappper
 
 class _Server:
-    def __init__(self, client: discord.Client, guild: discord.Guild, *args):
+    def __init__(self, client: discord.Client, guild: discord.Guild, *args, database_config={}):
+        self.__client = client 
+        self.guild = guild
         self.__args = [x for x in args]
+        self.database_config = database_config
 
         if not any([isinstance(x, str) for x in self.__args]):
             raise TypeError
-
-        self.__args_values = [[] for x in self.__args] 
-        self.__client = client 
-        self.guild = guild
-
+        
+        # Options for setup -> pre-programed 
         self.options = {'members': False, 'messages': False}
 
         if 'members' in self.__args:
             self.options['members'] = True
         if 'messages' in self.__args:
             self.options['messages'] = True
+        
+        # PostgreSQL Database functions generation 
+        if database_config:
+            try: 
+                self.connect = psycopg2.connect(**self.database_config)
+                print('[200]')
+                self.cur = self.connect.cursor()
+            except psycopg2.Error as e:
+                print(f"Error connecting to the database . . . {e}")
 
-        for index, arg in enumerate(self.__args):
+            for index, arg in enumerate(self.__args):
+                gen_function_database_getter = f"""async def {self.guild.capitalize()}Get{arg.capitalize()}():
+                self.cur.execute("SELECT {arg} FROM {self.guild}_{arg}")
+                self.connect.commit()
+                output = self.cur.fetchall()
+                return [row[0] for row in output]"""
 
-            gen_function_code_getter = f'''async def {self.guild.capitalize()}Get{arg.capitalize()}():
-            return self._Server__args_values[{index}]'''
+                gen_function_database_setter = f"""async def {self.guild.capitalize()}Set{arg.capitalize()}(value):
+                if not isinstance(value, list):
+                    raise TypeError("value is supposed to be type list not " + str(type(value)))
+                self.cur.execute('''DELETE FROM {self.guild}_{arg}''')
+                self.connect.commit()
+                for item in value:
+                    self.cur.execute(f'''INSERT INTO {self.guild}_{arg} ({arg})
+                    VALUES ('{{item}}')''')
+                    self.connect.commit()"""
 
-            gen_function_code_setter = f'''async def {self.guild.capitalize()}Set{arg.capitalize()}(value):
-            if not isinstance(value, list):
-                raise TypeError("value is supposed to be type list not " + str(type(value)))
-            self._Server__args_values[{index}] = value 
-            '''
+                gen_function_database_add = f"""async def {self.guild.capitalize()}Add{arg.capitalize()}(value):
+                self.cur.execute(f'''INSERT INTO {self.guild}_{arg} ({arg})
+                VALUES ('{{value}}')''')
+                self.connect.commit()"""
 
-            gen_function_code_add = f'''async def {self.guild.capitalize()}Add{arg.capitalize()}(value):
-            self._Server__args_values[{index}].append(value)'''
+                gen_function_database_remove = f"""async def {self.guild.capitalize()}Remove{arg.capitalize()}():
+                self.cur.execute('''DELETE FROM {self.guild}_{arg}
+                WHERE id = (
+                    SELECT id
+                    FROM {self.guild}_{arg}
+                    ORDER BY id DESC 
+                    LIMIT 1
+                );''')"""
 
-            gen_function_code_remove = f'''async def {self.guild.capitalize()}Remove{arg.capitalize()}(*args):
-            if len(args) > 1:
-                raise TypeError("{self.guild.capitalize()}Remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
-            if args:
-                del self._Server__args_values[{index}][args[0]]
-            else:
-                del self._Server__args_values[{index}][-1]'''
+                exec(gen_function_database_getter, {'self': self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Get{arg.capitalize()} = {self.guild.capitalize()}Get{arg.capitalize()}")
+                exec(gen_function_database_setter, {'self': self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Set{arg.capitalize()} = {self.guild.capitalize()}Set{arg.capitalize()}")
+                exec(gen_function_database_add, {'self': self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Add{arg.capitalize()} = {self.guild.capitalize()}Add{arg.capitalize()}")
+                exec(gen_function_database_remove, {'self': self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Remove{arg.capitalize()} = {self.guild.capitalize()}Remove{arg.capitalize()}")
 
-            
-            exec(gen_function_code_getter, {'self':self}, globals())
-            exec(f"import __main__; __main__.{self.guild.capitalize()}Get{arg.capitalize()} = {self.guild.capitalize()}Get{arg.capitalize()}")
-            exec(gen_function_code_setter, {'self':self}, globals())
-            exec(f"import __main__; __main__.{self.guild.capitalize()}Set{arg.capitalize()} = {self.guild.capitalize()}Set{arg.capitalize()}")
-            exec(gen_function_code_add, {'self':self}, globals())
-            exec(f"import __main__; __main__.{self.guild.capitalize()}Add{arg.capitalize()} = {self.guild.capitalize()}Add{arg.capitalize()}")
-            exec(gen_function_code_remove, {'self':self}, globals())
-            exec(f"import __main__; __main__.{self.guild.capitalize()}Remove{arg.capitalize()} = {self.guild.capitalize()}Remove{arg.capitalize()}")
+        else:
+            self.__args_values = [[] for x in self.__args] 
 
-        self.server_dir = f"{os.getcwd()}/{self.guild.capitalize()}"
+            for index, arg in enumerate(self.__args):
+
+                gen_function_code_getter = f'''async def {self.guild.capitalize()}Get{arg.capitalize()}():
+                return self._Server__args_values[{index}]'''
+
+                gen_function_code_setter = f'''async def {self.guild.capitalize()}Set{arg.capitalize()}(value):
+                if not isinstance(value, list):
+                    raise TypeError("value is supposed to be type list not " + str(type(value)))
+                self._Server__args_values[{index}] = value 
+                '''
+
+                gen_function_code_add = f'''async def {self.guild.capitalize()}Add{arg.capitalize()}(value):
+                self._Server__args_values[{index}].append(value)'''
+
+                gen_function_code_remove = f'''async def {self.guild.capitalize()}Remove{arg.capitalize()}(*args):
+                if len(args) > 1:
+                    raise TypeError("{self.guild.capitalize()}Remove{arg.capitalize()} only takes one positional agrument but " + str(len(args)) + " were given")
+                if args:
+                    del self._Server__args_values[{index}][args[0]]
+                else:
+                    del self._Server__args_values[{index}][-1]'''
+
+                
+                exec(gen_function_code_getter, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Get{arg.capitalize()} = {self.guild.capitalize()}Get{arg.capitalize()}")
+                exec(gen_function_code_setter, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Set{arg.capitalize()} = {self.guild.capitalize()}Set{arg.capitalize()}")
+                exec(gen_function_code_add, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Add{arg.capitalize()} = {self.guild.capitalize()}Add{arg.capitalize()}")
+                exec(gen_function_code_remove, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}Remove{arg.capitalize()} = {self.guild.capitalize()}Remove{arg.capitalize()}")
+
+            self.server_dir = f"{os.getcwd()}/{self.guild.capitalize()}"
 
 
     async def __generic_function(self):
@@ -108,36 +161,50 @@ class _Server:
     
     def take_snapshot(self, func=None):
         async def take_snapshot_wrapper():
-
-            self.guild_names = [x.name for x in self.__client.guilds]
-
-            self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)] 
-
-            global_guild_exec_code1 = f"global {self.guild.capitalize()}"
-            global_guild_exec_code2  = f"{self.guild.capitalize()} = self.guild_obj"
+            if self.database_config:
+                
+                for item in self.__args:
+                    self.cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.guild.capitalize()}_{item} (
+                        id SERIAL PRIMARY KEY
+                        );""")
+                    self.connect.commit()
+                    self.cur.execute(f"""ALTER TABLE {self.guild.capitalize()}_{item}
+                    ADD COLUMN IF NOT EXISTS {item} TEXT;
+                    """)
+                    self.connect.commit()
             
-            exec(global_guild_exec_code1, {'self':self}, globals())
-            exec(global_guild_exec_code2, {'self':self}, globals())
-            exec(f"import __main__; __main__.{self.guild.capitalize()} = {self.guild.capitalize()}")
+            else:
+                self.guild_names = [x.name for x in self.__client.guilds]
 
-            self.guild_attrs = self.__get_guild_attrs()
+                self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)] 
 
-            for attr in self.guild_attrs:
-                code = f'{self.guild.capitalize()}{attr.capitalize()} = self.guild_obj.{attr}'
-                exec(code, {'self':self}, globals())
-                exec(f"import __main__; __main__.{self.guild.capitalize()}{attr.capitalize()} = {self.guild.capitalize()}{attr.capitalize()}")
-        
-            if self.options['members']:
-                for member in self.guild_obj.members:
-                    await eval(f"{self.guild.capitalize()}AddMembers('{str(member)}')", globals())
+                global_guild_exec_code1 = f"global {self.guild.capitalize()}Guild"
+                global_guild_exec_code2  = f"{self.guild.capitalize()} = self.guild_obj"
 
-            if self.options['messages']:
-                for channel in self.guild_obj.channels:
-                    try:
-                        async for message in channel.history(limit=None):
-                            await eval(f"{self.guild.capitalize()}AddMessages('{message.content}')", globals())
-                    except AttributeError:
-                        pass
+                exec(f"global {self.guild.capitalize()}")
+                
+                exec(global_guild_exec_code1, {'self':self}, globals())
+                exec(global_guild_exec_code2, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()} = {self.guild.capitalize()}")
+
+                self.guild_attrs = self.__get_guild_attrs()
+
+                for attr in self.guild_attrs:
+                    code = f'{self.guild.capitalize()}{attr.capitalize()} = self.guild_obj.{attr}'
+                    exec(code, {'self':self}, globals())
+                    exec(f"import __main__; __main__.{self.guild.capitalize()}{attr.capitalize()} = {self.guild.capitalize()}{attr.capitalize()}")
+            
+                if self.options['members']:
+                    for member in self.guild_obj.members:
+                        await eval(f"{self.guild.capitalize()}AddMembers('{str(member)}')", globals())
+
+                if self.options['messages']:
+                    for channel in self.guild_obj.channels:
+                        try:
+                            async for message in channel.history(limit=None):
+                                await eval(f"{self.guild.capitalize()}AddMessages('{message.content}')", globals())
+                        except AttributeError:
+                            pass
 
             if func is None:
                 await self.__generic_function() 
@@ -220,9 +287,33 @@ class _Server:
 
         return pd.DataFrame({'Catagory': combined_list_catagories, "Value": combined_list_values})
 
+    async def disconnect(self):
+        self.cur.close() 
+        self.connect.close() 
+    
+    def database_to_pd_dataframe(self, table=None):
+        if table:
+            self.cur.execute(f"SELECT {table.split('_')[-1]} FROM {table}")
+            output = self.cur.fetchall() 
+            return pd.DataFrame(output)
+        else:
+            combined_list_catagories = [] 
+            combined_list_values  = []
+            for item in self.__args:
+               self.cur.execute(f"SELECT {item} FROM {self.guild}_{item}")
+               output = self.cur.fetchall()
+               output = [x[0] for x in output]
+               combined_list_catagories += [item] * len(output)
+               combined_list_values += output 
+
+        return pd.DataFrame({'Catagory': combined_list_catagories, 'Value': combined_list_values})
+
 class ServerStatistics:
     def __init__(self, server):
         self.server = server
-        self.df = self.server.to_pd_dataframe()
-        print(self.df.describe())
+        if server.database_config:
+            self.df = self.server.database_to_pd_dataframe() 
+        else:
+            self.df = self.server.to_pd_dataframe()
+        
         
