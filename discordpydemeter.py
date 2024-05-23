@@ -2,7 +2,10 @@ import discord
 import pandas as pd 
 import os 
 import psycopg2
-
+import time
+import types
+import inspect
+# Goal Framework <= 1000 lines == 1k lines  
 class Hub():
     def __init__(self, client: discord.Client, *args):
         self.args = [x for x in args]
@@ -48,12 +51,13 @@ class _Server:
         self.guild = guild
         self.__args = [x for x in args]
         self.database_config = database_config
+        self.birth = time.time()
 
         if not any([isinstance(x, str) for x in self.__args]):
             raise TypeError
         
         # Options for setup -> pre-programed 
-        self.options = {'members': False, 'messages': False}
+        self.options = {'members': False, 'messages': False, 'bans': False}
 
         if 'members' in self.__args:
             self.options['members'] = True
@@ -144,7 +148,13 @@ class _Server:
                 exec(gen_function_code_remove, {'self':self}, globals())
                 exec(f"import __main__; __main__.{self.guild.capitalize()}Remove{arg.capitalize()} = {self.guild.capitalize()}Remove{arg.capitalize()}")
 
-            self.server_dir = f"{os.getcwd()}/{self.guild.capitalize()}"
+        sql_execute_override_code = f"""async def Execute(query):
+    self.cur.execute(f"{{query}}")
+    self.connect.commit()"""
+        exec(sql_execute_override_code, {'self': self}, globals())
+        exec(f"import __main__; __main__.ExecuteSQL = Execute")
+
+        self.server_dir = f"{os.getcwd()}/{self.guild.capitalize()}"
 
 
     async def __generic_function(self):
@@ -161,10 +171,32 @@ class _Server:
     
     def take_snapshot(self, func=None):
         async def take_snapshot_wrapper():
+
+            self.guild_names = [x.name for x in self.__client.guilds]
+
+            self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)] 
+
+            global_guild_exec_code1 = f"global {self.guild.capitalize()}Guild"
+            global_guild_exec_code2  = f"{self.guild.capitalize()} = self.guild_obj"
+
+            exec(f"global {self.guild.capitalize()}")
+                
+            exec(global_guild_exec_code1, {'self':self}, globals())
+            exec(global_guild_exec_code2, {'self':self}, globals())
+            exec(f"import __main__; __main__.{self.guild.capitalize()} = {self.guild.capitalize()}")
+
+            self.guild_attrs = self.__get_guild_attrs()
+
+            for attr in self.guild_attrs:
+                code = f'{self.guild.capitalize()}{attr.capitalize()} = self.guild_obj.{attr}'
+                exec(code, {'self':self}, globals())
+                exec(f"import __main__; __main__.{self.guild.capitalize()}{attr.capitalize()} = {self.guild.capitalize()}{attr.capitalize()}")
+
+
             if self.database_config:
                 
                 for item in self.__args:
-                    self.cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.guild.capitalize()}_{item} (
+                    self.cur.execute(f"""DROP TABLE IF EXISTS {self.guild}_{item}; CREATE TABLE {self.guild.capitalize()}_{item} (
                         id SERIAL PRIMARY KEY
                         );""")
                     self.connect.commit()
@@ -172,39 +204,22 @@ class _Server:
                     ADD COLUMN IF NOT EXISTS {item} TEXT;
                     """)
                     self.connect.commit()
-            
-            else:
-                self.guild_names = [x.name for x in self.__client.guilds]
 
-                self.guild_obj = self.__client.guilds[self.guild_names.index(self.guild)] 
-
-                global_guild_exec_code1 = f"global {self.guild.capitalize()}Guild"
-                global_guild_exec_code2  = f"{self.guild.capitalize()} = self.guild_obj"
-
-                exec(f"global {self.guild.capitalize()}")
-                
-                exec(global_guild_exec_code1, {'self':self}, globals())
-                exec(global_guild_exec_code2, {'self':self}, globals())
-                exec(f"import __main__; __main__.{self.guild.capitalize()} = {self.guild.capitalize()}")
-
-                self.guild_attrs = self.__get_guild_attrs()
-
-                for attr in self.guild_attrs:
-                    code = f'{self.guild.capitalize()}{attr.capitalize()} = self.guild_obj.{attr}'
-                    exec(code, {'self':self}, globals())
-                    exec(f"import __main__; __main__.{self.guild.capitalize()}{attr.capitalize()} = {self.guild.capitalize()}{attr.capitalize()}")
-            
                 if self.options['members']:
-                    for member in self.guild_obj.members:
-                        await eval(f"{self.guild.capitalize()}AddMembers('{str(member)}')", globals())
+                    #await (f"{self.guild}")
+                    pass 
+            
+            if self.options['members']:
+                for member in self.guild_obj.members:
+                    await eval(f"{self.guild.capitalize()}AddMembers('{str(member)}')", globals())
 
-                if self.options['messages']:
-                    for channel in self.guild_obj.channels:
-                        try:
-                            async for message in channel.history(limit=None):
-                                await eval(f"{self.guild.capitalize()}AddMessages('{message.content}')", globals())
-                        except AttributeError:
-                            pass
+            if self.options['messages']:
+                for channel in self.guild_obj.channels:
+                    try:
+                        async for message in channel.history(limit=None):
+                            await eval(f"{self.guild.capitalize()}AddMessages('{message.content}')", globals())
+                    except AttributeError:
+                        pass
 
             if func is None:
                 await self.__generic_function() 
@@ -228,55 +243,59 @@ class _Server:
         print(self.server_dir)
         if not os.path.isdir(self.server_dir):
             os.mkdir(self.server_dir)
-        self.__args_zipped = dict(zip(self.__args, self.__args_values))
 
-        async def merge():
-            lengths = [len(x) for x in self.__args_zipped.values()] 
-            lengths_zipped = list(zip(self.__args, lengths))
-            sorted(lengths_zipped, key=lambda x: x[1])
-            to_merge = [] 
-            temp = []
-            for i in range(len(lengths_zipped) - 1):
-                if lengths_zipped[i][1] == lengths_zipped[i+1][1]:
-                    if not lengths_zipped[i][0] in temp:
-                        temp.append(lengths_zipped[i][0])
-                    if not lengths_zipped[i+1][0] in temp:
-                        temp.append(lengths_zipped[i+1][0])         
-                else:
-                    if temp:
-                        to_merge.append(temp) 
-                        temp = [] 
-            if temp:
-                to_merge.append(temp)    
-            return to_merge
-
-        to_merge = await merge() 
-    
-        if to_merge:
-            df_dict = {} 
-            for index, group in enumerate(to_merge): 
-                for item in group: 
-                    df_dict.update({item: self.__args_zipped[item]})
-
-                print(df_dict)
-                self.df = pd.DataFrame(df_dict)
-                self.file_type_manager(file_type, self.df, f"{'&'.join(group)}") 
-                #df.to_csv(f"{'&'.join(group)}.csv")
-
-            flatten = [y for y in [x for x in to_merge]][0]
-            rest = [x for x in self.__args if not x in flatten]
-            
-            for item in rest:
-                self.df = pd.DataFrame({item: self.__args_zipped[item]})
-                self.file_type_manager(file_type, self.df, f"{item}")
+        if self.database_config:
+            self.file_type_manager(file_type, self.database_to_pd_dataframe(), 'one-column')
 
         else:
-            for zipped in self.__args_zipped:
-                self.df = pd.DataFrame({zipped: self.__args_zipped[zipped]})
-                self.file_type_manager(file_type, self.df, f"{zipped}") 
-                #df.to_csv(f"{zipped}.csv")
+            self.__args_zipped = dict(zip(self.__args, self.__args_values))
+            async def merge():
+                lengths = [len(x) for x in self.__args_zipped.values()] 
+                lengths_zipped = list(zip(self.__args, lengths))
+                sorted(lengths_zipped, key=lambda x: x[1])
+                to_merge = [] 
+                temp = []
+                for i in range(len(lengths_zipped) - 1):
+                    if lengths_zipped[i][1] == lengths_zipped[i+1][1]:
+                        if not lengths_zipped[i][0] in temp:
+                            temp.append(lengths_zipped[i][0])
+                        if not lengths_zipped[i+1][0] in temp:
+                            temp.append(lengths_zipped[i+1][0])         
+                    else:
+                        if temp:
+                            to_merge.append(temp) 
+                            temp = [] 
+                if temp:
+                    to_merge.append(temp)    
+                return to_merge
 
-        self.file_type_manager(file_type, self.to_pd_dataframe(), "one-column")
+            to_merge = await merge() 
+        
+            if to_merge:
+                df_dict = {} 
+                for index, group in enumerate(to_merge): 
+                    for item in group: 
+                        df_dict.update({item: self.__args_zipped[item]})
+
+                    print(df_dict)
+                    self.df = pd.DataFrame(df_dict)
+                    self.file_type_manager(file_type, self.df, f"{'&'.join(group)}") 
+                    #df.to_csv(f"{'&'.join(group)}.csv")
+
+                flatten = [y for y in [x for x in to_merge]][0]
+                rest = [x for x in self.__args if not x in flatten]
+                
+                for item in rest:
+                    self.df = pd.DataFrame({item: self.__args_zipped[item]})
+                    self.file_type_manager(file_type, self.df, f"{item}")
+
+            else:
+                for zipped in self.__args_zipped:
+                    self.df = pd.DataFrame({zipped: self.__args_zipped[zipped]})
+                    self.file_type_manager(file_type, self.df, f"{zipped}") 
+                    #df.to_csv(f"{zipped}.csv")
+
+            self.file_type_manager(file_type, self.to_pd_dataframe(), "one-column")
 
     def to_pd_dataframe(self):
         combined_list_catagories = [] 
@@ -315,5 +334,58 @@ class ServerStatistics:
             self.df = self.server.database_to_pd_dataframe() 
         else:
             self.df = self.server.to_pd_dataframe()
+
+
+class Demeter: 
+    def __init__(self): 
+        import __main__
+        decoraters = ['after_invoke', 'before_invoke', 'check', 'check_once', 'command', 'event', 'group', 'hybrid_group', 'hybrid_command', 'listen']
+        self.functions  = []
+        self.runnables = []
+        print( __main__.__dict__.values())
+        self.client = None  
+        for item in __main__.__dict__.values():
+            if isinstance(item, types.FunctionType):
+                self.functions.append(item)
+            if isinstance(item, discord.Client):
+                self.client = item
+
+        for item in self.functions:
+            if item.__name__.split('__')[-1] in decoraters:
+                self.runnables.append([item, item.__name__.split('__')[-1]])
+
+        print(self.runnables)
+        
+        for runnable in self.runnables:
+            #exec(f"""{runnable[0].__name__} = {self.client.__name__}.{runnable[1]}({runnable[0]})""")
+            name = runnable[0].__name__.split('__')[0]
+            if runnable[1] == 'command':
+                desc = ''
+                #desc = runnable[0].desc
+
+                signature = inspect.signature(runnable[0])
+                desc_param = signature.parameters.get('desc', None)
+                if desc_param is not None and desc_param.default is not inspect.Parameter.empty:
+                    desc = desc_param.default
+             
+                print('description', desc)
+                
+                exec(f"import __main__; __main__.{name} = bot.command(name='{name}', help='{desc}')(function)", {'bot': __main__.bot, 'function': runnable[0]})
+                # do not replace the string literal -> IT DOES NOT WORK THE OTHER WAY AROUND!!!!!
+
+            if runnable[1] == 'event':
+                exec(f"import __main__; setattr(bot, '{name}', function); __main__.{name} = bot.event(function)", {'bot': __main__.bot, 'function': runnable[0]})
+
+        
+
+        
+
+
+
+
+        
+
+        
+
         
         
